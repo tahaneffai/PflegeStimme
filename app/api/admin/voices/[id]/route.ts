@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-export const dynamic = 'force-dynamic';
 import { prisma } from '@/lib/prisma';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
+
+export const dynamic = 'force-dynamic';
 
 // PATCH: Update voice (message and/or status)
 export async function PATCH(
