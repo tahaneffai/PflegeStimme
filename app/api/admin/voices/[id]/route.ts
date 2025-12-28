@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
+import { safeDbQuery } from '@/lib/db-utils';
 
 export const dynamic = 'force-dynamic';
 
