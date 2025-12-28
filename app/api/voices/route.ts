@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
       ErrorCodes.INTERNAL_ERROR,
       'Failed to fetch voices. Please try again later.',
       true,
-      fallbackData
+      []
     );
 
     return NextResponse.json({
