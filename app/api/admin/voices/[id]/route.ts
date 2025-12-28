@@ -7,6 +7,8 @@ import { safeDbQuery } from '@/lib/db-utils';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// This file handles PATCH and DELETE operations for individual voices
+
 // PATCH: Update voice (message and/or status)
 export async function PATCH(
   request: NextRequest,
