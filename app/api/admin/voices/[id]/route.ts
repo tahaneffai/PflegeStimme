@@ -77,10 +77,34 @@ export async function PATCH(
       );
     }
 
-    const voice = await prisma.anonymousVoice.update({
-      where: { id: params.id },
-      data: updateData,
-    });
+    // Use safeDbQuery for database operations
+    const updateResult = await safeDbQuery(
+      () => prisma.anonymousVoice.update({
+        where: { id: params.id },
+        data: updateData,
+      }),
+      null as any
+    );
+
+    if (!updateResult.ok) {
+      if (updateResult.errorCode === 'P2025' || updateResult.errorMessage?.includes('not found')) {
+        return NextResponse.json(
+          { error: 'Voice not found' },
+          { status: 404 }
+        );
+      }
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to update voice',
+          degraded: true,
+          message: 'Database temporarily unavailable. Please try again later.',
+        },
+        { status: 200 }
+      );
+    }
+
+    const voice = updateResult.data;
 
     return NextResponse.json({
       id: voice.id,
@@ -90,18 +114,23 @@ export async function PATCH(
       status: voice.status,
     });
   } catch (error: any) {
-    console.error('Error updating voice:', error);
+    console.error('[PATCH /api/admin/voices/[id]] Unexpected error:', error);
     
-    if (error?.code === 'P2025') {
+    // Handle JSON parse errors
+    if (error instanceof SyntaxError || error?.message?.includes('JSON')) {
       return NextResponse.json(
-        { error: 'Voice not found' },
-        { status: 404 }
+        { error: 'Invalid request body' },
+        { status: 400 }
       );
     }
     
     return NextResponse.json(
-      { error: 'Failed to update voice' },
-      { status: 500 }
+      { 
+        error: 'Failed to update voice',
+        degraded: true,
+        message: 'Temporary unavailable. Please try again later.',
+      },
+      { status: 200 }
     );
   }
 }
