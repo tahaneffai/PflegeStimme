@@ -6,12 +6,12 @@
 export interface ApiSuccessResponse<T> {
   ok: true;
   data: T;
-  degraded?: false;
+  degraded?: boolean;
 }
 
-export interface ApiErrorResponse<T = any[]> {
+export interface ApiErrorResponse {
   ok: false;
-  data: null | T;
+  data: null | any[];
   error: {
     code: string;
     message: string;
@@ -19,7 +19,7 @@ export interface ApiErrorResponse<T = any[]> {
   degraded?: boolean;
 }
 
-export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse<T>;
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 /**
  * Create a successful API response
@@ -35,12 +35,12 @@ export function successResponse<T>(data: T, degraded = false): ApiSuccessRespons
 /**
  * Create an error API response
  */
-export function errorResponse<T = any[]>(
+export function errorResponse(
   code: string,
   message: string,
   degraded = false,
-  fallbackData: T | null = null
-): ApiErrorResponse<T> {
+  fallbackData: any[] = []
+): ApiErrorResponse {
   return {
     ok: false,
     data: fallbackData,
