@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-export const dynamic = 'force-dynamic';
 import { isAdminAuthenticated, updateAdminPassword } from '@/lib/admin-auth';
+
+// Explicitly set Node.js runtime for database operations
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +15,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (jsonError) {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
+
     const { oldPassword, newPassword } = body;
 
     if (!oldPassword || !newPassword) {
@@ -33,11 +44,14 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error updating password:', error);
+  } catch (error: any) {
+    console.error('[POST /api/admin/password] Unexpected error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { 
+        error: 'Failed to update password',
+        message: 'Temporary unavailable. Please try again later.',
+      },
+      { status: 200 }
     );
   }
 }

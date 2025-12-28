@@ -27,14 +27,26 @@ export default function AdminLoginPage() {
         body: JSON.stringify({ password }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Invalid password');
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        throw new Error('Invalid response from server');
       }
 
-      router.push('/admin');
-      router.refresh();
+      if (!response.ok) {
+        const errorMsg = data.error || data.message || 'Invalid password';
+        console.error('[Login] Login failed:', errorMsg, 'Status:', response.status);
+        throw new Error(errorMsg);
+      }
+
+      if (data.success) {
+        console.log('[Login] Login successful, redirecting...');
+        router.push('/admin');
+        router.refresh();
+      } else {
+        throw new Error(data.error || 'Login failed');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

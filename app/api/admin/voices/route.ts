@@ -2,8 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { safeDbQuery } from '@/lib/db-utils';
+import { errorResponse, successResponse, ErrorCodes } from '@/lib/api-response';
 
+// Explicitly set Node.js runtime for Prisma compatibility
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+interface AdminVoiceItem {
+  id: string;
+  message: string;
+  topicTags: string | null;
+  createdAt: string;
+  status: string;
+}
+
+interface AdminVoicesResponse {
+  voices: AdminVoiceItem[];
+  pagination: {
+    page: number;
+    size: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,34 +82,51 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
-    const voices = voicesResult.data;
-    const total = totalResult.data;
+    const voices = voicesResult.data || [];
+    const total = totalResult.data || 0;
+    const isDegraded = voicesResult.degraded || totalResult.degraded;
+    const isOk = voicesResult.ok && totalResult.ok;
 
-    // Always return 200, even if degraded
-    return NextResponse.json({
-      ok: voicesResult.ok && totalResult.ok,
-      degraded: voicesResult.degraded || totalResult.degraded,
-      voices: voices.map((v: any) => ({
-        id: v.id,
-        message: v.message,
-        topicTags: v.topicTags,
-        createdAt: v.createdAt.toISOString(),
-        status: v.status,
-      })),
+    // Map voices with type safety
+    const voiceItems: AdminVoiceItem[] = voices.map((v: any) => ({
+      id: String(v.id || ''),
+      message: String(v.message || ''),
+      topicTags: v.topicTags ? String(v.topicTags) : null,
+      createdAt: v.createdAt ? new Date(v.createdAt).toISOString() : new Date().toISOString(),
+      status: String(v.status || 'PENDING'),
+    }));
+
+    const responseData: AdminVoicesResponse = {
+      voices: voiceItems,
       pagination: {
         page,
         size,
-        total,
-        totalPages: Math.ceil(total / size),
-        hasMore: skip + size < total,
+        total: Number(total) || 0,
+        totalPages: Math.ceil((Number(total) || 0) / size),
+        hasMore: skip + size < (Number(total) || 0),
       },
-      ...(process.env.NODE_ENV === 'development' && (voicesResult.degraded || totalResult.degraded) ? {
-        _debug: {
-          voicesError: voicesResult.errorCode,
-          totalError: totalResult.errorCode,
-        },
-      } : {}),
-    }, { status: 200 });
+    };
+
+    // Always return 200, even if degraded
+    if (isOk && !isDegraded) {
+      return NextResponse.json({
+        ...successResponse(responseData),
+        ...responseData, // Include data at root level for backward compatibility
+      }, { status: 200 });
+    } else {
+      // Degraded state
+      const response = successResponse(responseData, true);
+      return NextResponse.json({
+        ...response,
+        ...responseData, // Include data at root level for backward compatibility
+        ...(process.env.NODE_ENV === 'development' ? {
+          _debug: {
+            voicesError: voicesResult.errorCode,
+            totalError: totalResult.errorCode,
+          },
+        } : {}),
+      }, { status: 200 });
+    }
   } catch (error: any) {
     // This catch should rarely trigger, but if it does, return 200 with degraded
     console.error('[GET /api/admin/voices] Unexpected error:', error);
@@ -97,9 +136,7 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(pageParam) || 1);
     const size = Math.min(50, Math.max(1, parseInt(sizeParam) || 20));
 
-    return NextResponse.json({
-      ok: false,
-      degraded: true,
+    const fallbackData: AdminVoicesResponse = {
       voices: [],
       pagination: {
         page,
@@ -108,6 +145,18 @@ export async function GET(request: NextRequest) {
         totalPages: 0,
         hasMore: false,
       },
+    };
+
+    const response = errorResponse(
+      ErrorCodes.INTERNAL_ERROR,
+      'Failed to fetch voices. Please try again later.',
+      true,
+      fallbackData
+    );
+
+    return NextResponse.json({
+      ...response,
+      ...fallbackData,
       ...(process.env.NODE_ENV === 'development' ? {
         _debug: {
           error: error?.message || 'Unknown error',

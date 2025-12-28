@@ -32,13 +32,25 @@ export default function Home() {
 
   useEffect(() => {
     fetch('/api/voices?page=1&size=3&sort=newest')
-      .then((res) => res.json())
-      .then((data) => {
-        // API always returns 200, check items (new format) or voices (legacy)
-        if (data.items) {
+      .then(async (res) => {
+        let data: any;
+        try {
+          data = await res.json();
+        } catch (jsonError) {
+          console.error('Error parsing JSON:', jsonError);
+          setVoicesLoading(false);
+          return;
+        }
+        
+        // Handle new API response format
+        if (data.ok && data.data) {
+          const items = data.data.items || [];
+          setHomepageVoices(items);
+        } else if (data.items) {
+          // Legacy format support
           setHomepageVoices(data.items);
         } else if (data.voices) {
-          // Legacy format support
+          // Very old format
           setHomepageVoices(data.voices);
         }
         setVoicesLoading(false);

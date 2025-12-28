@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { clearAdminSession } from '@/lib/admin-auth';
 
+// Explicitly set Node.js runtime for cookie operations
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST() {

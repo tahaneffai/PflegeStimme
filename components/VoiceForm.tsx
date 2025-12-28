@@ -47,10 +47,43 @@ export default function VoiceForm({ onSuccess }: VoiceFormProps) {
         }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to submit');
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        throw new Error('Invalid response from server');
       }
+
+      // API always returns 200, check ok flag
+      if (!data.ok) {
+        // Extract error message from new API response format
+        let errorMsg = 'Failed to submit';
+        if (data.error) {
+          if (typeof data.error === 'string') {
+            errorMsg = data.error;
+          } else if (data.error.message) {
+            errorMsg = data.error.message;
+          } else if (typeof data.error === 'object') {
+            errorMsg = JSON.stringify(data.error);
+          }
+        } else if (data.message) {
+          errorMsg = data.message;
+        }
+        throw new Error(errorMsg);
+      }
+
+      // Handle degraded state
+      if (data.degraded) {
+        const degradedMsg = data.data?.message || data.message || (lang === 'de' 
+          ? 'Service temporär nicht verfügbar. Bitte später erneut versuchen.'
+          : 'Service temporarily unavailable. Please try again later.');
+        throw new Error(degradedMsg);
+      }
+
+      // Extract success message from response
+      const successMsg = data.data?.message || data.message || (lang === 'de'
+        ? 'Danke! Deine Nachricht wurde erhalten und erscheint nach Prüfung.'
+        : 'Thank you! Your message was received and will appear after review.');
 
       setMessage('');
       setTopicTags('');
@@ -60,7 +93,16 @@ export default function VoiceForm({ onSuccess }: VoiceFormProps) {
       // Reset success message after 5 seconds
       setTimeout(() => setSuccess(false), 5000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      // Safely extract error message
+      let errorMsg = 'An error occurred';
+      if (err instanceof Error) {
+        errorMsg = err.message;
+      } else if (typeof err === 'string') {
+        errorMsg = err;
+      } else if (err && typeof err === 'object' && 'message' in err) {
+        errorMsg = String(err.message);
+      }
+      setError(errorMsg);
     } finally {
       setIsSubmitting(false);
     }

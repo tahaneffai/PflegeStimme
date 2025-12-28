@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { safeDbQuery } from '@/lib/db-utils';
 
+// Explicitly set Node.js runtime for Prisma compatibility
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // PATCH: Update voice (message and/or status)
@@ -64,7 +66,7 @@ export async function PATCH(
     if (status !== undefined) {
       if (!['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
         return NextResponse.json(
-          { error: 'Status must be PENDING, APPROVED, or REJECTED' },
+          { ok: false, error: 'Status must be PENDING, APPROVED, or REJECTED' },
           { status: 400 }
         );
       }
@@ -73,7 +75,7 @@ export async function PATCH(
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
-        { error: 'No fields to update' },
+        { ok: false, error: 'No fields to update' },
         { status: 400 }
       );
     }
@@ -90,13 +92,14 @@ export async function PATCH(
     if (!updateResult.ok) {
       if (updateResult.errorCode === 'P2025' || updateResult.errorMessage?.includes('not found')) {
         return NextResponse.json(
-          { error: 'Voice not found' },
+          { ok: false, error: 'Voice not found' },
           { status: 404 }
         );
       }
       
       return NextResponse.json(
         { 
+          ok: false,
           error: 'Failed to update voice',
           degraded: true,
           message: 'Database temporarily unavailable. Please try again later.',
@@ -108,6 +111,7 @@ export async function PATCH(
     const voice = updateResult.data;
 
     return NextResponse.json({
+      ok: true,
       id: voice.id,
       message: voice.message,
       topicTags: voice.topicTags,
@@ -120,13 +124,14 @@ export async function PATCH(
     // Handle JSON parse errors
     if (error instanceof SyntaxError || error?.message?.includes('JSON')) {
       return NextResponse.json(
-        { error: 'Invalid request body' },
+        { ok: false, error: 'Invalid request body' },
         { status: 400 }
       );
     }
     
     return NextResponse.json(
       { 
+        ok: false,
         error: 'Failed to update voice',
         degraded: true,
         message: 'Temporary unavailable. Please try again later.',
@@ -161,13 +166,14 @@ export async function DELETE(
     if (!deleteResult.ok) {
       if (deleteResult.errorCode === 'P2025' || deleteResult.errorMessage?.includes('not found')) {
         return NextResponse.json(
-          { error: 'Voice not found' },
+          { ok: false, error: 'Voice not found' },
           { status: 404 }
         );
       }
       
       return NextResponse.json(
         { 
+          ok: false,
           error: 'Failed to delete voice',
           degraded: true,
           message: 'Database temporarily unavailable. Please try again later.',
@@ -176,12 +182,13 @@ export async function DELETE(
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ ok: true, success: true });
   } catch (error: any) {
     console.error('[DELETE /api/admin/voices/[id]] Unexpected error:', error);
     
     return NextResponse.json(
       { 
+        ok: false,
         error: 'Failed to delete voice',
         degraded: true,
         message: 'Temporary unavailable. Please try again later.',

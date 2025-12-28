@@ -42,18 +42,46 @@ export default function VoicesList({ initialVoices, initialPagination }: VoicesL
         `/api/voices?page=${pagination.page + 1}&size=${pagination.size}&sort=newest`
       );
 
-      const data = await response.json();
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('[VoicesList] JSON parse error:', jsonError);
+        setError(lang === 'de' ? 'Fehler beim Laden.' : 'Error loading.');
+        setPagination((prev) => ({ ...prev, hasMore: false }));
+        return;
+      }
       
-      // Handle both success and error responses gracefully
-      // API always returns 200, check ok flag and items
-      if (response.ok && data.items) {
-        setVoices((prev) => [...prev, ...data.items]);
+      // Handle error response
+      if (!data.ok) {
+        const errorMsg = data.error?.message || data.error || (lang === 'de' ? 'Fehler beim Laden.' : 'Error loading.');
+        setError(errorMsg);
+        setPagination((prev) => ({ ...prev, hasMore: false }));
+        return;
+      }
+
+      // Extract items from response (handle both old and new format)
+      const items = data.data?.items || data.items || [];
+      
+      // Ensure items is an array and map safely
+      const safeItems: Voice[] = Array.isArray(items)
+        ? items.map((v: any) => ({
+            id: String(v.id || ''),
+            message: String(v.message || ''),
+            createdAt: String(v.createdAt || new Date().toISOString()),
+            topicTags: v.topicTags ? String(v.topicTags) : null,
+          }))
+        : [];
+
+      if (response.ok && safeItems.length > 0) {
+        setVoices((prev) => [...prev, ...safeItems]);
+        const paginationData = data.data || data;
         setPagination({
-          page: data.page,
-          size: data.size,
-          total: data.total,
-          totalPages: data.totalPages,
-          hasMore: data.hasMore,
+          page: Number(paginationData.page) || pagination.page + 1,
+          size: Number(paginationData.size) || pagination.size,
+          total: Number(paginationData.total) || 0,
+          totalPages: Number(paginationData.totalPages) || 0,
+          hasMore: Boolean(paginationData.hasMore) || false,
         });
         
         // Show degraded warning if needed
@@ -61,11 +89,10 @@ export default function VoicesList({ initialVoices, initialPagination }: VoicesL
           setError(lang === 'de' ? 'Datenbank temporär nicht verfügbar. Bitte später erneut versuchen.' : 'Database temporarily unavailable. Please try again later.');
         }
       } else {
-        // Even if there's an error, the API returns empty items array
-        // So we just stop loading more
+        // No more items or error
         setPagination((prev) => ({ ...prev, hasMore: false }));
-        if (data.error || data.degraded) {
-          setError(lang === 'de' ? 'Fehler beim Laden. Bitte später erneut versuchen.' : 'Error loading. Please try again later.');
+        if (data.degraded) {
+          setError(lang === 'de' ? 'Datenbank temporär nicht verfügbar.' : 'Database temporarily unavailable.');
         }
       }
     } catch (err) {
@@ -82,28 +109,51 @@ export default function VoicesList({ initialVoices, initialPagination }: VoicesL
     setError('');
     try {
       const response = await fetch('/api/voices?page=1&size=12&sort=newest');
-      const data = await response.json();
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('[VoicesList] JSON parse error on refresh:', jsonError);
+        setError(lang === 'de' ? 'Fehler beim Aktualisieren.' : 'Error refreshing.');
+        return;
+      }
       
-      // Handle both success and error responses gracefully
-      // API always returns 200, check ok flag and items
-      if (response.ok && data.items) {
-        setVoices(data.items);
+      // Handle error response
+      if (!data.ok) {
+        const errorMsg = data.error?.message || data.error || (lang === 'de' ? 'Fehler beim Aktualisieren.' : 'Error refreshing.');
+        setError(errorMsg);
+        return;
+      }
+
+      // Extract items from response (handle both old and new format)
+      const items = data.data?.items || data.items || [];
+      
+      // Ensure items is an array and map safely
+      const safeItems: Voice[] = Array.isArray(items)
+        ? items.map((v: any) => ({
+            id: String(v.id || ''),
+            message: String(v.message || ''),
+            createdAt: String(v.createdAt || new Date().toISOString()),
+            topicTags: v.topicTags ? String(v.topicTags) : null,
+          }))
+        : [];
+
+      if (response.ok && safeItems.length >= 0) {
+        setVoices(safeItems);
+        const paginationData = data.data || data;
         setPagination({
-          page: data.page,
-          size: data.size,
-          total: data.total,
-          totalPages: data.totalPages,
-          hasMore: data.hasMore,
+          page: Number(paginationData.page) || 1,
+          size: Number(paginationData.size) || 12,
+          total: Number(paginationData.total) || 0,
+          totalPages: Number(paginationData.totalPages) || 0,
+          hasMore: Boolean(paginationData.hasMore) || false,
         });
         
         // Show degraded warning if needed
         if (data.degraded) {
           setError(lang === 'de' ? 'Datenbank temporär nicht verfügbar.' : 'Database temporarily unavailable.');
-        }
-      } else {
-        // Keep existing voices, just show error
-        if (data.error || data.degraded) {
-          setError(lang === 'de' ? 'Fehler beim Aktualisieren.' : 'Error refreshing.');
+        } else {
+          setError(''); // Clear error on successful refresh
         }
       }
     } catch (err) {

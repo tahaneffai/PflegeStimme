@@ -22,6 +22,7 @@ export default function AdminDashboardClient() {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDegraded, setIsDegraded] = useState(false);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('newest');
   const [status, setStatus] = useState('all');
@@ -52,33 +53,86 @@ export default function AdminDashboardClient() {
         return;
       }
 
-      // API always returns 200, check ok flag
-      let data;
+      // API always returns 200, check ok flag and data structure
+      let data: any;
       try {
         data = await response.json();
       } catch (jsonError) {
+        console.error('[AdminDashboard] JSON parse error:', jsonError);
         throw new Error('Invalid response from server');
       }
       
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to fetch voices');
+      // Handle error response
+      if (!data.ok) {
+        // Extract error message safely
+        let errorMsg = 'Failed to fetch voices';
+        if (data.error) {
+          if (typeof data.error === 'string') {
+            errorMsg = data.error;
+          } else if (data.error.message) {
+            errorMsg = data.error.message;
+          } else if (typeof data.error === 'object') {
+            errorMsg = 'Database error occurred';
+          }
+        }
+        setError(errorMsg);
+        setVoices([]);
+        setPagination({
+          total: 0,
+          totalPages: 0,
+          hasMore: false,
+        });
+        return;
       }
 
-      // Handle degraded state
-      if (data.degraded) {
-        setError('Database temporarily unavailable. Please try again later.');
-      } else {
-        setError(''); // Clear error if not degraded
-      }
+      // Extract data from response (handle both old and new format)
+      const voicesData = data.data?.voices || data.voices || [];
+      const paginationData = data.data?.pagination || data.pagination;
 
-      setVoices(data.voices || []);
-      setPagination(data.pagination || {
+      // Ensure voices is an array
+      const safeVoices: Voice[] = Array.isArray(voicesData) 
+        ? voicesData.map((v: any) => ({
+            id: String(v.id || ''),
+            message: String(v.message || ''),
+            topicTags: v.topicTags ? String(v.topicTags) : null,
+            createdAt: String(v.createdAt || new Date().toISOString()),
+            status: (v.status || 'PENDING') as VoiceStatus,
+          }))
+        : [];
+
+      setVoices(safeVoices);
+      setPagination(paginationData || {
         total: 0,
         totalPages: 0,
         hasMore: false,
       });
+
+      // Handle degraded state - show as warning, not blocking error
+      if (data.degraded) {
+        setIsDegraded(true);
+        // Only show degraded warning if we have no data
+        if (safeVoices.length === 0) {
+          setError('Database temporarily unavailable. Please try again later.');
+        } else {
+          // If we have data, show a non-blocking warning
+          console.warn('[AdminDashboard] Database in degraded state, but data loaded');
+          setError(''); // Clear blocking error, data is available
+        }
+      } else {
+        setIsDegraded(false);
+        setError(''); // Clear error if not degraded
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      // Safely extract error message
+      let errorMsg = 'An error occurred';
+      if (err instanceof Error) {
+        errorMsg = err.message;
+      } else if (typeof err === 'string') {
+        errorMsg = err;
+      } else if (err && typeof err === 'object' && 'message' in err) {
+        errorMsg = String(err.message);
+      }
+      setError(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -104,12 +158,44 @@ export default function AdminDashboardClient() {
         body: JSON.stringify({ message: newMessage }),
       });
 
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Check for error response
       if (!response.ok) {
-        throw new Error('Failed to update message');
+        throw new Error('Network error occurred');
+      }
+
+      // Check if API returned an error
+      if (data.error || (data.ok === false)) {
+        // Extract error message safely
+        let errorMsg = data.message || 'Failed to update message';
+        if (data.error) {
+          if (typeof data.error === 'string') {
+            errorMsg = data.error;
+          } else if (data.error.message) {
+            errorMsg = data.error.message;
+          }
+        }
+        throw new Error(errorMsg);
       }
 
       await fetchVoices();
     } catch (error) {
+      // Safely extract error message
+      let errorMsg = 'Failed to update message';
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMsg = String(error.message);
+      }
+      setError(errorMsg);
       throw error;
     }
   };
@@ -124,12 +210,49 @@ export default function AdminDashboardClient() {
         body: JSON.stringify({ status: newStatus }),
       });
 
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Check for error response
       if (!response.ok) {
+        throw new Error('Network error occurred');
+      }
+
+      // Check if API returned an error
+      if (data.error || (data.ok === false)) {
+        // Extract error message safely
+        let errorMsg = data.message || 'Failed to update status';
+        if (data.error) {
+          if (typeof data.error === 'string') {
+            errorMsg = data.error;
+          } else if (data.error.message) {
+            errorMsg = data.error.message;
+          }
+        }
+        throw new Error(errorMsg);
+      }
+
+      // Success - data.ok should be true or undefined (for backward compatibility)
+      if (data.ok === false) {
         throw new Error('Failed to update status');
       }
 
       await fetchVoices();
     } catch (error) {
+      // Safely extract error message
+      let errorMsg = 'Failed to update status';
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMsg = String(error.message);
+      }
+      setError(errorMsg);
       throw error;
     }
   };
@@ -140,12 +263,44 @@ export default function AdminDashboardClient() {
         method: 'DELETE',
       });
 
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Check for error response
       if (!response.ok) {
-        throw new Error('Failed to delete message');
+        throw new Error('Network error occurred');
+      }
+
+      // Check if API returned an error
+      if (data.error || (data.ok === false)) {
+        // Extract error message safely
+        let errorMsg = data.message || 'Failed to delete message';
+        if (data.error) {
+          if (typeof data.error === 'string') {
+            errorMsg = data.error;
+          } else if (data.error.message) {
+            errorMsg = data.error.message;
+          }
+        }
+        throw new Error(errorMsg);
       }
 
       await fetchVoices();
     } catch (error) {
+      // Safely extract error message
+      let errorMsg = 'Failed to delete message';
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMsg = String(error.message);
+      }
+      setError(errorMsg);
       throw error;
     }
   };
@@ -230,6 +385,19 @@ export default function AdminDashboardClient() {
         </div>
       </motion.div>
 
+      {/* Degraded State Warning (non-blocking) */}
+      {!isLoading && !error && voices.length > 0 && isDegraded && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-strong p-4 rounded-xl border border-gold/30 bg-gold/5 mb-6"
+        >
+          <p className="text-gold text-sm text-center">
+            ⚠️ Database in degraded state. Some features may be limited.
+          </p>
+        </motion.div>
+      )}
+
       {/* Voices List */}
       <div>
         {isLoading ? (
@@ -237,9 +405,15 @@ export default function AdminDashboardClient() {
             <RefreshCw className="w-8 h-8 text-gold animate-spin mx-auto mb-4" />
             <p className="text-soft-gray/80">Loading voices...</p>
           </div>
-        ) : error ? (
+        ) : error && voices.length === 0 ? (
           <div className="glass-strong p-6 rounded-2xl border border-gold/10 text-center">
-            <p className="text-gold">{error}</p>
+            <p className="text-gold">{String(error)}</p>
+            <button
+              onClick={fetchVoices}
+              className="mt-4 px-4 py-2 bg-gold text-dark-green-primary rounded-lg font-semibold hover:bg-gold/90 transition-all"
+            >
+              Retry
+            </button>
           </div>
         ) : voices.length === 0 ? (
           <div className="glass-strong p-12 rounded-2xl border border-gold/10 text-center">

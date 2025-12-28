@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { validateDatabaseUrl } from './env';
 
 interface SafeQueryResult<T> {
   ok: boolean;
@@ -17,6 +18,18 @@ export async function safeDbQuery<T>(
   fallback: T,
   retries = 2
 ): Promise<SafeQueryResult<T>> {
+  // Validate database URL first
+  const dbValidation = validateDatabaseUrl();
+  if (!dbValidation.valid) {
+    return {
+      ok: false,
+      data: fallback,
+      errorCode: 'ENV_MISSING',
+      errorMessage: dbValidation.error || 'Database configuration invalid',
+      degraded: true,
+    };
+  }
+
   let lastError: any = null;
   
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -31,12 +44,13 @@ export async function safeDbQuery<T>(
       const errorCode = error?.code || 'UNKNOWN';
       const errorMessage = error?.message || 'Database error';
       
-      // Log error in development
+      // Log error in development with more details
       if (process.env.NODE_ENV === 'development') {
         console.error(`[safeDbQuery] Attempt ${attempt + 1}/${retries + 1} failed:`, {
           code: errorCode,
           message: errorMessage,
           error: error,
+          stack: error?.stack,
         });
       }
       
@@ -87,11 +101,25 @@ export async function safeDbQuery<T>(
       }
       
       // For other errors, return fallback but mark as degraded
+      // Provide more specific error message based on error code
+      let errorMsg = 'Database query failed';
+      if (errorCode === 'P2002') {
+        errorMsg = 'Unique constraint violation';
+      } else if (errorCode === 'P2025') {
+        errorMsg = 'Record not found';
+      } else if (errorMessage?.includes('no such table')) {
+        errorMsg = 'Database table not found. Please run migrations.';
+      } else if (errorMessage?.includes('no such column')) {
+        errorMsg = 'Database schema mismatch. Please run migrations.';
+      } else if (errorMessage) {
+        errorMsg = `Database error: ${errorMessage}`;
+      }
+      
       return {
         ok: false,
         data: fallback,
         errorCode,
-        errorMessage: 'Database query failed',
+        errorMessage: errorMsg,
         degraded: true,
       };
     }

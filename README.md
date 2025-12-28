@@ -44,12 +44,22 @@ npm install
 ```
 
 3. Set up environment variables:
-Create a `.env.local` file in the root directory:
+```bash
+# Option 1: Run the setup script (recommended)
+node scripts/setup-env.js
+
+# Option 2: Manually create .env.local file
+# Copy .env.example to .env.local and update values
+```
+
+The `.env.local` file should contain:
 ```env
 DATABASE_URL="file:./prisma/dev.db"
-ADMIN_PASSWORD=13121312
+ADMIN_PASSWORD=12345678
 ADMIN_SECRET=change-this-to-a-random-secret-in-production
 ```
+
+**Important**: The `DATABASE_URL` environment variable is required. If it's not set, the application will use a default value in development, but Prisma requires it to be explicitly set.
 
 4. Set up the database:
 ```bash

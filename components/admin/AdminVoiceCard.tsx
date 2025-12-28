@@ -75,7 +75,8 @@ export default function AdminVoiceCard({ voice, onEdit, onDelete, onStatusChange
         await onStatusChange(voice.id, pendingAction.status);
       } catch (error) {
         console.error('Status change error:', error);
-        alert('Failed to update status');
+        const errorMsg = error instanceof Error ? error.message : 'Failed to update status';
+        alert(errorMsg);
       }
     }
 

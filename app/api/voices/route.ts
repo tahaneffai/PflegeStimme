@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { safeDbQuery } from '@/lib/db-utils';
+import { errorResponse, successResponse, ErrorCodes } from '@/lib/api-response';
 
+// Explicitly set Node.js runtime for Prisma compatibility
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+interface VoiceItem {
+  id: string;
+  message: string;
+  topicTags: string | null;
+  createdAt: string;
+}
+
+interface VoicesResponse {
+  items: VoiceItem[];
+  page: number;
+  size: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
 
 // GET: Fetch paginated voices
 // NEVER returns 500 - always returns 200 with degraded flag if DB fails
@@ -47,32 +66,44 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
-    const voices = voicesResult.data;
-    const total = totalResult.data;
+    const voices = voicesResult.data || [];
+    const total = totalResult.data || 0;
+    const isDegraded = voicesResult.degraded || totalResult.degraded;
+    const isOk = voicesResult.ok && totalResult.ok;
 
-    // Always return 200, even if degraded
-    return NextResponse.json({
-      ok: voicesResult.ok && totalResult.ok,
-      degraded: voicesResult.degraded || totalResult.degraded,
-      items: voices.map((v) => ({
-        id: v.id,
-        message: v.message,
-        topicTags: v.topicTags,
-        createdAt: v.createdAt.toISOString(),
-      })),
+    // Map voices to response format with type safety
+    const items: VoiceItem[] = voices.map((v: any) => ({
+      id: String(v.id || ''),
+      message: String(v.message || ''),
+      topicTags: v.topicTags ? String(v.topicTags) : null,
+      createdAt: v.createdAt ? new Date(v.createdAt).toISOString() : new Date().toISOString(),
+    }));
+
+    const responseData: VoicesResponse = {
+      items,
       page,
       size,
-      total,
-      totalPages: Math.ceil(total / size),
-      hasMore: skip + size < total,
-      // Include error info in dev mode only
-      ...(process.env.NODE_ENV === 'development' && (voicesResult.degraded || totalResult.degraded) ? {
-        _debug: {
-          voicesError: voicesResult.errorCode,
-          totalError: totalResult.errorCode,
-        },
-      } : {}),
-    }, { status: 200 });
+      total: Number(total) || 0,
+      totalPages: Math.ceil((Number(total) || 0) / size),
+      hasMore: skip + size < (Number(total) || 0),
+    };
+
+    // Always return 200, even if degraded
+    if (isOk && !isDegraded) {
+      return NextResponse.json(successResponse(responseData), { status: 200 });
+    } else {
+      // Degraded state - return success response with degraded flag
+      const response = successResponse(responseData, true);
+      return NextResponse.json({
+        ...response,
+        ...(process.env.NODE_ENV === 'development' ? {
+          _debug: {
+            voicesError: voicesResult.errorCode,
+            totalError: totalResult.errorCode,
+          },
+        } : {}),
+      }, { status: 200 });
+    }
   } catch (error: any) {
     // This catch should rarely trigger, but if it does, return 200 with degraded
     console.error('[GET /api/voices] Unexpected error:', error);
@@ -82,15 +113,25 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(pageParam) || 1);
     const size = Math.min(50, Math.max(1, parseInt(sizeParam) || 12));
 
-    return NextResponse.json({
-      ok: false,
-      degraded: true,
+    const fallbackData: VoicesResponse = {
       items: [],
       page,
       size,
       total: 0,
       totalPages: 0,
       hasMore: false,
+    };
+
+    const response = errorResponse(
+      ErrorCodes.INTERNAL_ERROR,
+      'Failed to fetch voices. Please try again later.',
+      true,
+      fallbackData
+    );
+
+    return NextResponse.json({
+      ...response,
+      ...fallbackData,
       ...(process.env.NODE_ENV === 'development' ? {
         _debug: {
           error: error?.message || 'Unknown error',
@@ -110,11 +151,10 @@ export async function POST(request: NextRequest) {
     // Validation
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
-        { 
-          ok: false,
-          error: 'Message is required',
-          message: 'Message is required',
-        },
+        errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          'Message is required'
+        ),
         { status: 400 }
       );
     }
@@ -123,22 +163,20 @@ export async function POST(request: NextRequest) {
 
     if (trimmedMessage.length < 20) {
       return NextResponse.json(
-        { 
-          ok: false,
-          error: 'Message must be at least 20 characters',
-          message: 'Message must be at least 20 characters',
-        },
+        errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          'Message must be at least 20 characters'
+        ),
         { status: 400 }
       );
     }
 
     if (trimmedMessage.length > 2000) {
       return NextResponse.json(
-        { 
-          ok: false,
-          error: 'Message must be less than 2000 characters',
-          message: 'Message must be less than 2000 characters',
-        },
+        errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          'Message must be less than 2000 characters'
+        ),
         { status: 400 }
       );
     }
@@ -176,24 +214,23 @@ export async function POST(request: NextRequest) {
 
     if (createResult.ok) {
       return NextResponse.json(
-        { 
-          ok: true,
+        successResponse({
           pending: true,
           message: 'Thanks. Your message was received and will appear after review.',
-        },
+        }),
         { status: 200 }
       );
     } else {
       // DB failed but return 200 with degraded status
-      return NextResponse.json(
-        {
-          ok: false,
-          degraded: true,
-          message: 'Temporary unavailable. Please try again later.',
-          error: createResult.errorMessage || 'Database unavailable',
-        },
-        { status: 200 }
+      const errorResp = errorResponse(
+        createResult.errorCode || ErrorCodes.DB_QUERY_FAILED,
+        createResult.errorMessage || 'Database unavailable. Please try again later.',
+        true
       );
+      return NextResponse.json({
+        ...errorResp,
+        message: 'Temporary unavailable. Please try again later.',
+      }, { status: 200 });
     }
   } catch (error: any) {
     // This catch should rarely trigger, but if it does, return 200 with degraded
@@ -202,30 +239,28 @@ export async function POST(request: NextRequest) {
     // Handle JSON parse errors
     if (error instanceof SyntaxError || error?.message?.includes('JSON')) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: 'Invalid request body',
-          message: 'Invalid request format',
-        },
+        errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          'Invalid request body format'
+        ),
         { status: 400 }
       );
     }
 
     // For any other unexpected error, return 200 with degraded
-    return NextResponse.json(
-      {
-        ok: false,
-        degraded: true,
-        message: 'Temporary unavailable. Please try again later.',
-        error: 'Internal error',
-        ...(process.env.NODE_ENV === 'development' ? {
-          _debug: {
-            error: error?.message || 'Unknown error',
-          },
-        } : {}),
-      },
-      { status: 200 }
+    const errorResp = errorResponse(
+      ErrorCodes.INTERNAL_ERROR,
+      'Temporary unavailable. Please try again later.',
+      true
     );
+    return NextResponse.json({
+      ...errorResp,
+      ...(process.env.NODE_ENV === 'development' ? {
+        _debug: {
+          error: error?.message || 'Unknown error',
+        },
+      } : {}),
+    }, { status: 200 });
   }
 }
 
