@@ -31,7 +31,7 @@ export default function Home() {
   const [voicesLoading, setVoicesLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/voices?page=1&size=3&sort=newest')
+    fetch('/api/comments?page=1&size=3')
       .then(async (res) => {
         let data: any;
         try {

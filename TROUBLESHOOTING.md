@@ -1,148 +1,79 @@
-# Troubleshooting Database Errors
+# Admin Login Troubleshooting
 
-## Quick Diagnosis
+## Current Status: Still Getting 401 Unauthorized
 
-If you see database errors, run these diagnostics:
+I've simplified the password check to the absolute minimum. Here's what to do:
 
-```bash
-# Test database connection
-node scripts/test-db-connection.js
+## Step 1: Check Server Terminal
 
-# Setup environment variables (if missing)
-node scripts/setup-env.js
+**CRITICAL**: When you try to log in, look at your **server terminal** (where `npm run dev` is running).
+
+### You SHOULD see these logs:
+```
+========================================
+[POST /api/admin/login] LOGIN REQUEST RECEIVED
+[POST /api/admin/login] Password received: "12345678"
+========================================
+[checkPassword] SIMPLE CHECK
+[checkPassword] Input: "12345678"
+[checkPassword] Expected: "12345678"
+[checkPassword] Are equal? true/false
+========================================
 ```
 
-## "Environment variable not found: DATABASE_URL"
+### If you DON'T see these logs:
+- **The request isn't reaching the server!**
+- Check if the server is actually running
+- Check if you're accessing the correct URL
+- Check browser console for network errors
 
-**Symptoms:**
-- Error: `Environment variable not found: DATABASE_URL`
-- Prisma schema validation fails
+## Step 2: Verify Server is Running
 
-**Solution:**
-1. **Create .env.local file:**
-   ```bash
-   node scripts/setup-env.js
-   ```
-   Or manually create `.env.local`:
-   ```env
-   DATABASE_URL="file:./prisma/dev.db"
-   ```
+1. Check terminal shows: `Ready in Xs`
+2. Check it says: `Local: http://localhost:3000`
+3. Make sure no errors in terminal
 
-2. **Restart your dev server** after creating .env.local
+## Step 3: Test Direct API Call
 
-3. **Verify it's loaded:**
-   ```bash
-   node -e "console.log(process.env.DATABASE_URL)"
-   ```
-
-**Note:** The code now automatically sets a default DATABASE_URL in development, but it's still recommended to create `.env.local` explicitly.
-
-## Common Causes & Solutions
-
-### 1. Database File Locked (SQLite)
-**Symptoms:**
-- Error code: `SQLITE_BUSY` or `P1008`
-- Error message contains "locked"
-
-**Solution:**
-- Close any database viewers (DB Browser, Prisma Studio, etc.)
-- Stop the dev server
-- Restart: `npm run dev`
-
-### 2. Database File Missing
-**Symptoms:**
-- Error code: `P1001`
-- Error message: "Can't reach database"
-
-**Solution:**
-```bash
-npx prisma db push
+Open browser console and run:
+```javascript
+fetch('/api/admin/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ password: '12345678' })
+})
+.then(r => r.json())
+.then(console.log)
+.catch(console.error)
 ```
 
-### 3. Schema Out of Sync
-**Symptoms:**
-- Error message: "no such table" or "no such column"
+This will show you the exact response.
 
-**Solution:**
-```bash
-npx prisma migrate dev
-# or
-npx prisma db push
-```
+## Step 4: Check Browser Network Tab
 
-### 4. Prisma Client Not Generated
-**Symptoms:**
-- Error message contains "PrismaClient"
-- Error code: `P1000`
+1. Open DevTools (F12)
+2. Go to Network tab
+3. Try to log in
+4. Click on the `/api/admin/login` request
+5. Check:
+   - Request URL (should be `http://localhost:3000/api/admin/login`)
+   - Request payload (should have `{"password":"12345678"}`)
+   - Response status (401?)
+   - Response body (what error message?)
 
-**Solution:**
-```bash
-npx prisma generate
-```
+## Most Likely Issues
 
-### 5. Environment Variable Missing
-**Symptoms:**
-- Error code: `ENV_MISSING`
-- Error message: "DATABASE_URL is not set"
+1. **Server not restarted** - Code changes need server restart
+2. **Request not reaching server** - Check network tab
+3. **Wrong port** - Make sure it's 3000
+4. **Cached code** - Clear browser cache, restart server
 
-**Solution:**
-Create `.env.local`:
-```
-DATABASE_URL="file:./prisma/dev.db"
-```
+## What to Share
 
-### 6. Database Permissions
-**Symptoms:**
-- Error on Windows: "EPERM: operation not permitted"
-- Database file exists but can't be accessed
+If it still doesn't work, share:
+1. **Server terminal output** when you try to log in
+2. **Browser console errors** (if any)
+3. **Network tab** screenshot of the login request
+4. **Response body** from the failed request
 
-**Solution:**
-- Check file permissions
-- Ensure no other process is using the database
-- Try running as administrator (if needed)
-
-## Enhanced Error Messages
-
-The system now provides more specific error messages:
-
-- **"Database query failed"** → Generic error (check logs for details)
-- **"Database table not found. Please run migrations."** → Schema issue
-- **"Database schema mismatch. Please run migrations."** → Column missing
-- **"Database is locked. Please try again later."** → SQLite lock
-- **"Database connection error"** → Can't reach database
-- **"Database client not initialized"** → Prisma client issue
-
-## Debug Mode
-
-In development, check the console for detailed error logs:
-```
-[safeDbQuery] Attempt 1/3 failed: {
-  code: 'P1001',
-  message: 'Can\'t reach database',
-  error: ...
-}
-```
-
-## Still Having Issues?
-
-1. **Check if database file exists:**
-   ```bash
-   Test-Path prisma\dev.db  # Windows PowerShell
-   ls prisma/dev.db          # Linux/Mac
-   ```
-
-2. **Verify Prisma schema:**
-   ```bash
-   npx prisma validate
-   ```
-
-3. **Reset database (⚠️ deletes all data):**
-   ```bash
-   npx prisma migrate reset
-   ```
-
-4. **Check for file locks:**
-   - Close all database tools
-   - Stop dev server
-   - Check Task Manager for processes using the DB file
-
+This will help identify the exact issue!

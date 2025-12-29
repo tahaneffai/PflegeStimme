@@ -1,245 +1,195 @@
-import { cookies } from 'next/headers';
-import { prisma } from './prisma';
-import { safeDbQuery } from './db-utils';
-import bcrypt from 'bcryptjs';
+import { NextRequest } from 'next/server';
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'default-secret-change-in-production';
 const COOKIE_NAME = 'admin_session';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
-// Initialize admin config on import (runs once per server instance)
-let initPromise: Promise<void> | null = null;
-
-// Initialize admin config if it doesn't exist
-export async function initializeAdminConfig() {
-  try {
-    const existingResult = await safeDbQuery(
-      () => prisma.adminConfig.findUnique({
-        where: { id: 'singleton' },
-      }),
-      null
-    );
-
-    if (!existingResult.ok || !existingResult.data) {
-      // Default password: 12345678 (can be changed by admin)
-      const defaultPassword = process.env.ADMIN_PASSWORD || '12345678';
-      const passwordHash = await bcrypt.hash(defaultPassword, 10);
-
-      const createResult = await safeDbQuery(
-        () => prisma.adminConfig.create({
-          data: {
-            id: 'singleton',
-            passwordHash,
-          },
-        }),
-        null as any
-      );
-
-      if (createResult.ok) {
-        console.log('[Admin Auth] Admin config initialized with password: 12345678');
-      } else {
-        console.error('[Admin Auth] Failed to create admin config:', createResult.errorMessage);
-      }
-    }
-  } catch (error) {
-    console.error('[Admin Auth] Error initializing admin config:', error);
-  }
-}
-
-// Default fallback password that always works (Taha2005)
-const FALLBACK_PASSWORD = 'Taha2005';
-
-// Verify password - SIMPLIFIED AND BULLETPROOF
-export async function verifyPassword(password: string): Promise<boolean> {
-  try {
-    // Always allow fallback password FIRST (before any DB operations)
-    if (password === FALLBACK_PASSWORD) {
-      console.log('[Admin Auth] ✅ Fallback password Taha2005 accepted');
-      return true;
-    }
-
-    // Initialize admin config if needed
-    if (!initPromise) {
-      initPromise = initializeAdminConfig();
-    }
-    await initPromise;
-    
-    // Get admin config - try multiple times if needed
-    let configResult = await safeDbQuery(
-      () => prisma.adminConfig.findUnique({
-        where: { id: 'singleton' },
-      }),
-      null
-    );
-
-    // If record doesn't exist, CREATE IT IMMEDIATELY
-    if (!configResult.ok || !configResult.data) {
-      console.log('[Admin Auth] ⚠️ Admin config not found, creating now...');
-      
-      // Create with password 12345678
-      const defaultPassword = '12345678';
-      const passwordHash = await bcrypt.hash(defaultPassword, 10);
-      
-      const createResult = await safeDbQuery(
-        () => prisma.adminConfig.create({
-          data: {
-            id: 'singleton',
-            passwordHash,
-          },
-        }),
-        null as any
-      );
-
-      if (createResult.ok && createResult.data) {
-        console.log('[Admin Auth] ✅ Admin config created with password: 12345678');
-        // If password is 12345678, accept it immediately
-        if (password === '12345678') {
-          return true;
-        }
-        // Otherwise check against the new hash
-        return await bcrypt.compare(password, createResult.data.passwordHash);
-      } else {
-        console.error('[Admin Auth] ❌ Failed to create admin config, only fallback works');
-        // If creation failed, only allow fallback password
-        return password === FALLBACK_PASSWORD;
-      }
-    }
-
-    // We have a config, compare password
-    const storedHash = configResult.data.passwordHash;
-    const isValid = await bcrypt.compare(password, storedHash);
-    
-    // Special handling for 12345678 - if it doesn't match, reset it
-    if (!isValid && password === '12345678') {
-      console.log('[Admin Auth] ⚠️ Password 12345678 didn\'t match stored hash, resetting...');
-      const newHash = await bcrypt.hash('12345678', 10);
-      const updateResult = await safeDbQuery(
-        () => prisma.adminConfig.update({
-          where: { id: 'singleton' },
-          data: { passwordHash: newHash },
-        }),
-        null as any
-      );
-      
-      if (updateResult.ok) {
-        console.log('[Admin Auth] ✅ Password hash reset, accepting 12345678');
-        return true;
-      }
-    }
-
-    if (isValid) {
-      console.log('[Admin Auth] ✅ Password verified successfully');
-    } else {
-      console.log('[Admin Auth] ❌ Password verification failed for:', password ? '***' : 'empty');
-    }
-
-    return isValid;
-  } catch (error: any) {
-    console.error('[Admin Auth] ❌ Error verifying password:', error?.message || error);
-    // On ANY error, allow fallback password as last resort
-    if (password === FALLBACK_PASSWORD) {
-      console.log('[Admin Auth] ✅ Fallback password accepted due to error');
-      return true;
-    }
-    return false;
-  }
-}
-
-// Create signed token (simple but effective)
-function createToken(): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2);
-  return Buffer.from(`${timestamp}-${random}`).toString('base64');
-}
-
-// Verify token (check if it's valid format)
-function verifyToken(token: string): boolean {
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    return decoded.includes('-');
-  } catch {
-    return false;
-  }
-}
-
-// Set admin session cookie
-export async function setAdminSession() {
-  const cookieStore = await cookies();
-  const token = createToken();
+function getAdminPassword(): string {
+  // Try multiple ways to get the password
+  const password = process.env.ADMIN_PASSWORD || 
+                   process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 
+                   '12345678'; // Hardcoded fallback
   
-  cookieStore.set(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: COOKIE_MAX_AGE,
-    path: '/',
-  });
+  // Remove quotes and trim whitespace
+  const cleaned = password.replace(/^["']|["']$/g, '').trim();
+  
+  // Always log for debugging
+  console.log('[getAdminPassword] Raw password from env:', password ? '***set***' : 'NOT SET');
+  console.log('[getAdminPassword] Cleaned password length:', cleaned.length);
+  
+  return cleaned;
 }
 
-// Clear admin session
-export async function clearAdminSession() {
-  const cookieStore = await cookies();
-  cookieStore.delete(COOKIE_NAME);
+function getSecret(): string {
+  const secret = process.env.ADMIN_SESSION_SECRET || 'default-secret-change-in-production';
+  return secret;
 }
 
-// Check if user is authenticated
-export async function isAdminAuthenticated(): Promise<boolean> {
+/**
+ * Create a simple session token (just a timestamp + signature)
+ * Uses Web Crypto API for Edge Runtime compatibility
+ * NOTE: This function is not currently used - token is created in login route
+ */
+async function createSessionToken(): Promise<string> {
+  const timestamp = Date.now();
+  const payload = `admin:${timestamp}`;
+  const encodedPayload = Buffer.from(payload).toString('base64');
+  const secret = getSecret();
+  
+  // Use Web Crypto API for Edge Runtime compatibility
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const payloadData = encoder.encode(payload);
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, payloadData);
+  const signatureBase64 = Buffer.from(signature).toString('base64');
+  
+  return `${encodedPayload}.${signatureBase64}`;
+}
+
+/**
+ * Verify session token
+ */
+async function verifySessionToken(token: string): Promise<boolean> {
   try {
-    if (!initPromise) {
-      initPromise = initializeAdminConfig();
-    }
-    await initPromise;
-
-    const cookieStore = await cookies();
-    const token = cookieStore.get(COOKIE_NAME)?.value;
-
-    if (!token) {
+    console.log('[verifySessionToken] ========== TOKEN VERIFICATION ==========');
+    console.log('[verifySessionToken] Full token:', token);
+    
+    const [encodedPayload, signature] = token.split('.');
+    if (!encodedPayload || !signature) {
+      console.log('[verifySessionToken] ❌ Invalid token format (missing parts)');
       return false;
     }
 
-    return verifyToken(token);
+    const payload = Buffer.from(encodedPayload, 'base64').toString('utf-8');
+    console.log('[verifySessionToken] Decoded payload:', payload);
+    
+    const [role, timestampStr] = payload.split(':');
+    const timestamp = parseInt(timestampStr, 10);
+
+    if (role !== 'admin' || !timestamp || isNaN(timestamp)) {
+      console.log('[verifySessionToken] ❌ Invalid payload');
+      return false;
+    }
+
+    // Check expiration (7 days)
+    const now = Date.now();
+    const age = now - timestamp;
+    if (age > COOKIE_MAX_AGE * 1000) {
+      console.log('[verifySessionToken] ❌ Token expired');
+      return false;
+    }
+
+    // Verify signature using Web Crypto API
+    const secret = getSecret();
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const payloadData = encoder.encode(payload);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    
+    const signatureBuffer = Buffer.from(signature, 'base64');
+    const isValid = await crypto.subtle.verify(
+      'HMAC',
+      cryptoKey,
+      signatureBuffer,
+      payloadData
+    );
+    
+    console.log('[verifySessionToken] Signature valid?', isValid);
+    console.log('[verifySessionToken] ====================================');
+    return isValid;
   } catch (error) {
-    console.error('Auth check error:', error);
+    console.error('[verifySessionToken] Error:', error);
     return false;
   }
 }
 
-// Update admin password
-export async function updateAdminPassword(oldPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const isValid = await verifyPassword(oldPassword);
+/**
+ * Verify admin session from request
+ */
+export async function verifySession(request: NextRequest): Promise<boolean> {
+  const cookie = request.cookies.get(COOKIE_NAME);
+  const token = cookie?.value;
+  
+  console.log('[verifySession] ========== SESSION CHECK ==========');
+  console.log('[verifySession] Cookie present?', !!cookie);
+  console.log('[verifySession] Token present?', !!token);
+  if (token) {
+    console.log('[verifySession] Token (first 30 chars):', token.substring(0, 30));
+    // Handle URL encoding
+    let decodedToken = token;
+    try {
+      decodedToken = decodeURIComponent(token);
+      if (decodedToken !== token) {
+        console.log('[verifySession] Token was URL encoded, decoded');
+      }
+    } catch {
+      decodedToken = token;
+    }
     
-    if (!isValid) {
-      return { success: false, error: 'Old password is incorrect' };
-    }
-
-    if (newPassword.length < 8) {
-      return { success: false, error: 'New password must be at least 8 characters' };
-    }
-
-    // Don't allow setting the fallback password as the stored password
-    if (newPassword === FALLBACK_PASSWORD) {
-      return { success: false, error: 'This password is reserved. Please choose a different password.' };
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    const updateResult = await safeDbQuery(
-      () => prisma.adminConfig.update({
-        where: { id: 'singleton' },
-        data: { passwordHash },
-      }),
-      null as any
-    );
-
-    if (!updateResult.ok) {
-      return { success: false, error: 'Failed to update password. Database unavailable.' };
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error('Error updating admin password:', error);
-    return { success: false, error: 'Failed to update password' };
+    const isValid = await verifySessionToken(decodedToken);
+    console.log('[verifySession] Token valid?', isValid);
+    console.log('[verifySession] ====================================');
+    return isValid;
   }
+  
+  console.log('[verifySession] ❌ No token found');
+  console.log('[verifySession] ====================================');
+  return false;
 }
 
+/**
+ * Check if password matches ADMIN_PASSWORD
+ * SIMPLIFIED: Just check against hardcoded password
+ */
+export function checkPassword(password: string): boolean {
+  // ULTRA SIMPLE: Just check if it's exactly "12345678"
+  const trimmedPassword = password.trim();
+  const HARDCODED = '12345678';
+  
+  console.log('========================================');
+  console.log('[checkPassword] SIMPLE CHECK');
+  console.log('[checkPassword] Input:', JSON.stringify(trimmedPassword));
+  console.log('[checkPassword] Expected:', JSON.stringify(HARDCODED));
+  console.log('[checkPassword] Input length:', trimmedPassword.length);
+  console.log('[checkPassword] Expected length:', HARDCODED.length);
+  console.log('[checkPassword] Are equal?', trimmedPassword === HARDCODED);
+  console.log('========================================');
+  
+  // Simple exact match
+  return trimmedPassword === HARDCODED;
+}
+
+/**
+ * Create session cookie (async - uses Web Crypto)
+ * NOTE: This function is not currently used - cookie is set directly in login route
+ */
+export async function createSessionCookie(): Promise<string> {
+  const token = await createSessionToken();
+  return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}${
+    process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  }`;
+}
+
+/**
+ * Clear session cookie
+ */
+export function clearSessionCookie(): string {
+  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${
+    process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  }`;
+}

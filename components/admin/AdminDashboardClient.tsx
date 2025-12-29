@@ -46,7 +46,7 @@ export default function AdminDashboardClient() {
         ...(search && { search }),
       });
 
-      const response = await fetch(`/api/admin/voices?${params}`);
+      const response = await fetch(`/api/admin/comments?${params}`);
 
       if (response.status === 401) {
         router.push('/admin/login');
@@ -85,8 +85,8 @@ export default function AdminDashboardClient() {
         return;
       }
 
-      // Extract data from response (handle both old and new format)
-      const voicesData = data.data?.voices || data.voices || [];
+      // Extract data from response
+      const voicesData = data.data?.comments || data.comments || [];
       const paginationData = data.data?.pagination || data.pagination;
 
       // Ensure voices is an array
@@ -150,7 +150,7 @@ export default function AdminDashboardClient() {
 
   const handleEdit = async (id: string, newMessage: string) => {
     try {
-      const response = await fetch(`/api/admin/voices/${id}`, {
+      const response = await fetch(`/api/admin/comments/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -202,7 +202,7 @@ export default function AdminDashboardClient() {
 
   const handleStatusChange = async (id: string, newStatus: VoiceStatus) => {
     try {
-      const response = await fetch(`/api/admin/voices/${id}`, {
+      const response = await fetch(`/api/admin/comments/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -259,7 +259,7 @@ export default function AdminDashboardClient() {
 
   const handleDelete = async (id: string) => {
     try {
-      const response = await fetch(`/api/admin/voices/${id}`, {
+      const response = await fetch(`/api/admin/comments/${id}`, {
         method: 'DELETE',
       });
 
@@ -459,8 +459,6 @@ export default function AdminDashboardClient() {
         )}
       </div>
 
-      {/* Password Change Section */}
-      <AdminPasswordCard />
     </div>
   );
 }

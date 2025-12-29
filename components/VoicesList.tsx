@@ -39,7 +39,7 @@ export default function VoicesList({ initialVoices, initialPagination }: VoicesL
 
     try {
       const response = await fetch(
-        `/api/voices?page=${pagination.page + 1}&size=${pagination.size}&sort=newest`
+        `/api/comments?page=${pagination.page + 1}&size=${pagination.size}`
       );
 
       let data: any;
@@ -108,7 +108,7 @@ export default function VoicesList({ initialVoices, initialPagination }: VoicesL
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/voices?page=1&size=12&sort=newest');
+      const response = await fetch('/api/comments?page=1&size=12');
       let data: any;
       try {
         data = await response.json();

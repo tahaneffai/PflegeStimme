@@ -1,33 +1,26 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
+// Prisma Schema for PostgreSQL
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
-  // For local development, DATABASE_URL defaults to "file:./prisma/dev.db"
-  // For Vercel, set DATABASE_URL to your production database connection string
 }
 
-model AnonymousVoice {
-  id        String   @id @default(cuid())
-  message   String
-  topicTags String?  // comma-separated tags (optional)
-  status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
 
-  @@index([createdAt])
+model Comment {
+  id        String        @id @default(cuid())
+  content   String
+  status    CommentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
   @@index([status])
+  @@index([createdAt])
 }
-
-model AdminConfig {
-  id           String   @id @default("singleton")
-  passwordHash String
-  updatedAt    DateTime @updatedAt
-  createdAt    DateTime @default(now())
-}
-

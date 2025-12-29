@@ -1,53 +1,72 @@
 /**
- * Quick sanity check script to test /api/voices endpoint
- * Run: node scripts/test-api.js
+ * Test API endpoints
  */
+const fetch = require('node-fetch');
 
-async function testVoicesAPI() {
-  const baseUrl = process.env.API_URL || 'http://localhost:3000';
-  
-  console.log('Testing /api/voices endpoint...\n');
-  
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+async function testCommentsAPI() {
+  console.log('\n=== Testing Comments API ===\n');
+
+  // Test POST comment
   try {
-    const response = await fetch(`${baseUrl}/api/voices?page=1&size=5&sort=newest`);
-    
-    if (!response.ok) {
-      console.error(`❌ HTTP Error: ${response.status} ${response.statusText}`);
-      return;
-    }
-    
-    const data = await response.json();
-    
-    // Validate response structure
-    const requiredFields = ['ok', 'data'];
-    const missingFields = requiredFields.filter(field => !(field in data));
-    
-    if (missingFields.length > 0) {
-      console.error(`❌ Missing required fields: ${missingFields.join(', ')}`);
-      console.log('Response:', JSON.stringify(data, null, 2));
-      return;
-    }
-    
-    if (data.ok) {
-      console.log('✅ API Response OK');
-      console.log(`   Items: ${data.data?.items?.length || 0}`);
-      console.log(`   Total: ${data.data?.total || 0}`);
-      if (data.degraded) {
-        console.log('   ⚠️  Degraded mode (database issues)');
-      }
-    } else {
-      console.log('⚠️  API returned error:', data.error?.message || data.error);
-      if (data.degraded) {
-        console.log('   Database is in degraded state');
-      }
-    }
-    
-    console.log('\n✅ Response structure is valid');
+    console.log('1. Testing POST /api/comments...');
+    const postResponse = await fetch(`${BASE_URL}/api/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'This is a test comment with more than 5 characters',
+      }),
+    });
+    const postData = await postResponse.json();
+    console.log('   Status:', postResponse.status);
+    console.log('   Response:', JSON.stringify(postData, null, 2));
   } catch (error) {
-    console.error('❌ Test failed:', error.message);
-    console.error('   Make sure the dev server is running: npm run dev');
+    console.error('   ❌ Error:', error.message);
+  }
+
+  // Test GET comments
+  try {
+    console.log('\n2. Testing GET /api/comments...');
+    const getResponse = await fetch(`${BASE_URL}/api/comments?page=1&size=3`);
+    const getData = await getResponse.json();
+    console.log('   Status:', getResponse.status);
+    console.log('   Response:', JSON.stringify(getData, null, 2));
+  } catch (error) {
+    console.error('   ❌ Error:', error.message);
   }
 }
 
-testVoicesAPI();
+async function testAdminAPI() {
+  console.log('\n=== Testing Admin API ===\n');
+
+  // Test admin login
+  try {
+    console.log('1. Testing POST /api/admin/login...');
+    const loginResponse = await fetch(`${BASE_URL}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        password: process.env.ADMIN_PASSWORD || '12345678',
+      }),
+    });
+    const loginData = await loginResponse.json();
+    console.log('   Status:', loginResponse.status);
+    console.log('   Response:', JSON.stringify(loginData, null, 2));
+    console.log('   Cookies:', loginResponse.headers.get('set-cookie'));
+  } catch (error) {
+    console.error('   ❌ Error:', error.message);
+  }
+}
+
+async function main() {
+  console.log('Testing API endpoints...\n');
+  console.log('BASE_URL:', BASE_URL);
+  console.log('ADMIN_PASSWORD:', process.env.ADMIN_PASSWORD ? '***set***' : 'NOT SET');
+
+  await testCommentsAPI();
+  await testAdminAPI();
+}
+
+main().catch(console.error);
 
