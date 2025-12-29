@@ -103,3 +103,5 @@ ADMIN_SESSION_SECRET="your-random-secret-string-at-least-32-characters-long"
 3. **Apply migrations**: `npx prisma migrate deploy`
 4. **Test the app**: Try submitting a comment
 
+
+

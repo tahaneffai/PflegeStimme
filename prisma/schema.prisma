@@ -24,3 +24,11 @@ model Comment {
   @@index([status])
   @@index([createdAt])
 }
+
+model AdminConfig {
+  id        String   @id @default("admin")
+  passwordHash String
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_config")
+}

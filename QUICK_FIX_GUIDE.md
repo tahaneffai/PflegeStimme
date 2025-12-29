@@ -80,3 +80,5 @@ After creating/updating `.env.local`:
 3. Check the server terminal output for specific error messages
 4. Verify the database migration was applied (status column exists)
 
+
+

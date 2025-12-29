@@ -56,3 +56,5 @@ const result = checkPassword(testPassword);
 console.log('\n=== Result ===');
 console.log(result ? '✅ Password check PASSED' : '❌ Password check FAILED');
 
+
+

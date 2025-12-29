@@ -73,3 +73,5 @@ That's it! The Prisma Cloud database already has your schema and is working.
 2. **Test connection**: `node scripts/test-db-connection.js`
 3. **Test the app**: Try submitting a comment
 
+
+

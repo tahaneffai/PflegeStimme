@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { prisma } from './prisma';
+import bcrypt from 'bcryptjs';
 
 const COOKIE_NAME = 'admin_session';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -153,25 +155,40 @@ export async function verifySession(request: NextRequest): Promise<boolean> {
 }
 
 /**
- * Check if password matches ADMIN_PASSWORD
- * SIMPLIFIED: Just check against hardcoded password
+ * Check if password matches stored password (database or env)
  */
-export function checkPassword(password: string): boolean {
-  // ULTRA SIMPLE: Just check if it's exactly "12345678"
+export async function checkPassword(password: string): Promise<boolean> {
   const trimmedPassword = password.trim();
-  const HARDCODED = '12345678';
   
-  console.log('========================================');
-  console.log('[checkPassword] SIMPLE CHECK');
-  console.log('[checkPassword] Input:', JSON.stringify(trimmedPassword));
-  console.log('[checkPassword] Expected:', JSON.stringify(HARDCODED));
-  console.log('[checkPassword] Input length:', trimmedPassword.length);
-  console.log('[checkPassword] Expected length:', HARDCODED.length);
-  console.log('[checkPassword] Are equal?', trimmedPassword === HARDCODED);
-  console.log('========================================');
+  // Try database check first
+  try {
+    if (!prisma) {
+      console.warn('[checkPassword] Prisma client not available, using env var');
+      throw new Error('Prisma client not available');
+    }
+
+    const adminConfig = await prisma.adminConfig.findUnique({
+      where: { id: 'admin' },
+    });
+
+    if (adminConfig && adminConfig.passwordHash) {
+      // Check against database hash
+      const isValid = await bcrypt.compare(trimmedPassword, adminConfig.passwordHash);
+      console.log('[checkPassword] Database check result:', isValid);
+      return isValid;
+    }
+  } catch (error: any) {
+    // Log error but don't fail - fall back to env var
+    console.error('[checkPassword] Database check error:', error?.message || error);
+    // Fall through to env var check
+  }
+
+  // Fallback to env var for initial setup
+  const envPassword = getAdminPassword();
+  const isValid = trimmedPassword === envPassword;
   
-  // Simple exact match
-  return trimmedPassword === HARDCODED;
+  console.log('[checkPassword] Env var check result:', isValid);
+  return isValid;
 }
 
 /**

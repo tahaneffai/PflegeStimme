@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     
     let isValid = false;
     try {
-      isValid = checkPassword(password);
+      isValid = await checkPassword(password);
       console.log('[POST /api/admin/login] Final result:', isValid);
     } catch (error: any) {
       console.error('[POST /api/admin/login] ERROR:', error);

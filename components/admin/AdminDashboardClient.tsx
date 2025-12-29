@@ -459,6 +459,9 @@ export default function AdminDashboardClient() {
         )}
       </div>
 
+      {/* Password Change Section - After Comment Cards */}
+      <AdminPasswordCard />
+
     </div>
   );
 }
