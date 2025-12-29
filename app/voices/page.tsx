@@ -1,58 +1,47 @@
-import { prisma } from '@/lib/prisma';
-import { safeDbQuery } from '@/lib/db-utils';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import VoicesPageClient from '@/components/VoicesPageClient';
 import VoicesPageHero from '@/components/VoicesPageHero';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
 async function getInitialVoices() {
   try {
-    const [voicesResult, totalResult] = await Promise.all([
-      safeDbQuery(
-        () => prisma.anonymousVoice.findMany({
-          where: {
-            status: 'APPROVED',
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 12,
-        }),
-        []
-      ),
-      safeDbQuery(
-        () => prisma.anonymousVoice.count({
-          where: {
-            status: 'APPROVED',
-          },
-        }),
-        0
-      ),
+    const [voices, total] = await Promise.all([
+      prisma.comment.findMany({
+        where: {
+          status: 'APPROVED',
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 12,
+      }),
+      prisma.comment.count({
+        where: {
+          status: 'APPROVED',
+        },
+      }),
     ]);
 
-    const voices = voicesResult.data;
-    const total = totalResult.data;
-
     return {
-      voices: voices.map((v: any) => ({
+      voices: voices.map((v) => ({
         id: v.id,
-        message: v.message,
+        message: v.content,
         createdAt: v.createdAt.toISOString(),
-        topicTags: v.topicTags,
+        topicTags: null, // Not in schema, but frontend expects it
       })),
       pagination: {
         page: 1,
         size: 12,
         total,
         totalPages: Math.ceil(total / 12),
-        hasMore: 12 < total,
+        hasMore: total > 12,
       },
-      degraded: voicesResult.degraded || totalResult.degraded,
     };
   } catch (error) {
-    console.error('Error fetching initial voices:', error);
+    console.error('[VoicesPage] Error fetching voices:', error);
     return {
       voices: [],
       pagination: {
@@ -62,7 +51,6 @@ async function getInitialVoices() {
         totalPages: 0,
         hasMore: false,
       },
-      degraded: true,
     };
   }
 }

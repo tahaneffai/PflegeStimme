@@ -1,20 +1,28 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { isAdminAuthenticated } from '@/lib/admin-auth';
+import { verifySession } from '@/lib/admin-auth';
 
 export async function middleware(request: NextRequest) {
-  // Only check admin routes
-  if (request.nextUrl.pathname.startsWith('/admin')) {
-    const isAuth = await isAdminAuthenticated();
+  const pathname = request.nextUrl.pathname;
 
-    // Redirect to login if not authenticated (except login page)
-    if (!isAuth && request.nextUrl.pathname !== '/admin/login') {
+  // Protect admin pages (except login)
+  if (pathname.startsWith('/admin') && pathname !== '/admin/login') {
+    const isAuthenticated = await verifySession(request);
+    if (!isAuthenticated) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
     }
+  }
 
-    // Redirect to dashboard if already authenticated and on login page
-    if (isAuth && request.nextUrl.pathname === '/admin/login') {
-      return NextResponse.redirect(new URL('/admin', request.url));
+  // Protect admin API routes (EXCEPT login and logout)
+  if (pathname.startsWith('/api/admin') && 
+      pathname !== '/api/admin/login' && 
+      pathname !== '/api/admin/logout') {
+    const isAuthenticated = await verifySession(request);
+    if (!isAuthenticated) {
+      return NextResponse.json(
+        { ok: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
+        { status: 401 }
+      );
     }
   }
 
@@ -22,6 +30,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: '/admin/:path*',
+  matcher: ['/admin/:path*', '/api/admin/:path*'],
 };
-

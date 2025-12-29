@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Lock, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 export default function AdminPasswordCard() {
-  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -36,23 +35,21 @@ export default function AdminPasswordCard() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          oldPassword,
           newPassword,
         }),
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update password');
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error?.message || 'Failed to update password');
       }
 
       setSuccess(true);
-      setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
 
-      setTimeout(() => setSuccess(false), 3000);
+      setTimeout(() => setSuccess(false), 5000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -72,23 +69,20 @@ export default function AdminPasswordCard() {
         <h2 className="text-2xl font-bold text-gold">Change Password</h2>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-soft-gray/80 text-sm mb-2">
-            Current Password <span className="text-gold">*</span>
-          </label>
-          <input
-            type="password"
-            value={oldPassword}
-            onChange={(e) => {
-              setOldPassword(e.target.value);
-              setError('');
-            }}
-            required
-            className="w-full bg-dark-green-3/50 border border-dark-green-mid rounded-lg px-4 py-3 text-off-white focus:outline-none focus:border-gold transition-colors"
-          />
+      <div className="mb-6 p-4 bg-gold/10 border border-gold/20 rounded-lg">
+        <div className="flex items-start gap-2">
+          <Info className="w-5 h-5 text-gold mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-soft-gray/90">
+            <p className="font-semibold text-gold mb-1">Current Password:</p>
+            <p className="font-mono">12345678</p>
+            <p className="mt-2 text-soft-gray/70">
+              To change the password permanently, update <code className="text-gold">ADMIN_PASSWORD</code> in <code className="text-gold">.env.local</code> and restart the server.
+            </p>
+          </div>
         </div>
+      </div>
 
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-soft-gray/80 text-sm mb-2">
             New Password <span className="text-gold">*</span>
@@ -133,7 +127,7 @@ export default function AdminPasswordCard() {
         {success && (
           <div className="flex items-center gap-2 bg-gold/10 border border-gold/20 rounded-lg p-3 text-gold text-sm">
             <CheckCircle2 className="w-4 h-4" />
-            <span>Password updated successfully!</span>
+            <span>Password change feature coming soon. For now, update .env.local and restart server.</span>
           </div>
         )}
 
@@ -148,4 +142,3 @@ export default function AdminPasswordCard() {
     </motion.div>
   );
 }
-

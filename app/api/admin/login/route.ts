@@ -1,80 +1,118 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyPassword, setAdminSession } from '@/lib/admin-auth';
+import { checkPassword } from '@/lib/admin-auth';
 
-// Explicitly set Node.js runtime for database operations
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    let body;
-    try {
-      body = await request.json();
-    } catch (jsonError) {
-      return NextResponse.json(
-        { error: 'Invalid request body' },
-        { status: 400 }
-      );
-    }
-
+    const body = await request.json();
     const { password } = body;
 
     if (!password || typeof password !== 'string') {
       return NextResponse.json(
-        { error: 'Password is required' },
+        { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Password is required' } },
         { status: 400 }
       );
     }
 
-    console.log('[Login] 🔐 Attempting login with password:', password ? '***' : 'empty');
+    // SIMPLIFIED: Direct password check
+    console.log('========================================');
+    console.log('[POST /api/admin/login] LOGIN REQUEST RECEIVED');
+    console.log('[POST /api/admin/login] Password received:', JSON.stringify(password));
+    console.log('[POST /api/admin/login] Password type:', typeof password);
+    console.log('[POST /api/admin/login] Password length:', password?.length || 0);
     
-    // Verify password with detailed logging
-    const isValid = await verifyPassword(password);
-    
-    console.log('[Login] Password verification result:', isValid ? '✅ SUCCESS' : '❌ FAILED');
+    let isValid = false;
+    try {
+      isValid = checkPassword(password);
+      console.log('[POST /api/admin/login] Final result:', isValid);
+    } catch (error: any) {
+      console.error('[POST /api/admin/login] ERROR:', error);
+      console.error('[POST /api/admin/login] Error stack:', error?.stack);
+      return NextResponse.json(
+        { ok: false, error: { code: 'INTERNAL_ERROR', message: 'Authentication error: ' + error.message } },
+        { status: 500 }
+      );
+    }
+    console.log('========================================');
 
     if (!isValid) {
-      console.log('[Login] ❌ Login rejected');
+      console.log('[POST /api/admin/login] ❌ Invalid password - returning 401');
       return NextResponse.json(
-        { 
-          error: 'Invalid password',
-          message: 'Please try: Taha2005 (always works) or 12345678 (default)',
-          hint: 'Check server console for details'
-        },
+        { ok: false, error: { code: 'UNAUTHORIZED', message: 'Invalid password' } },
         { status: 401 }
       );
     }
-
-    console.log('[Login] ✅ Password verified, setting session cookie...');
     
+    console.log('[POST /api/admin/login] ✅ Password valid - creating session');
+
+    // Create session token using Web Crypto API (Edge Runtime compatible)
+    let token: string;
     try {
-      await setAdminSession();
-      console.log('[Login] ✅ Session cookie set successfully');
-    } catch (sessionError) {
-      console.error('[Login] ❌ Failed to set session:', sessionError);
+      const timestamp = Date.now();
+      const payload = `admin:${timestamp}`;
+      const encodedPayload = Buffer.from(payload).toString('base64');
+      const secret = process.env.ADMIN_SESSION_SECRET || 'default-secret-change-in-production';
+      
+      // Use Web Crypto API for Edge Runtime compatibility
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(secret);
+      const payloadData = encoder.encode(payload);
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      
+      const signature = await crypto.subtle.sign('HMAC', cryptoKey, payloadData);
+      const signatureBase64 = Buffer.from(signature).toString('base64');
+      token = `${encodedPayload}.${signatureBase64}`;
+      
+      console.log('[POST /api/admin/login] Session token created');
+    } catch (error: any) {
+      console.error('[POST /api/admin/login] Token creation error:', error);
       return NextResponse.json(
-        { 
-          error: 'Failed to create session',
-          message: 'Password correct but session creation failed'
-        },
+        { ok: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to create session' } },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ 
-      success: true,
-      message: 'Login successful'
+    const response = NextResponse.json({ ok: true, data: { message: 'Login successful' } });
+    
+    // Set cookie using Next.js cookies() API
+    // Note: Don't URL encode - Next.js handles this
+    response.cookies.set('admin_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/',
     });
+    
+    console.log('[POST /api/admin/login] Cookie set successfully');
+    console.log('[POST /api/admin/login] Token (first 30 chars):', token.substring(0, 30));
+    console.log('[POST /api/admin/login] Cookie will be set with value:', token.substring(0, 30) + '...');
+
+    return response;
   } catch (error: any) {
-    console.error('[POST /api/admin/login] ❌ Unexpected error:', error?.message || error);
+    console.error('[POST /api/admin/login] Error:', error);
+    console.error('[POST /api/admin/login] Error details:', {
+      message: error?.message,
+      stack: error?.stack,
+    });
     return NextResponse.json(
       { 
-        error: 'Login failed',
-        message: 'Temporary unavailable. Please try again later.',
-        details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+        ok: false, 
+        error: { 
+          code: 'INTERNAL_ERROR', 
+          message: error?.message || 'Login failed' 
+        } 
       },
-      { status: 200 }
+      { status: 500 }
     );
   }
 }
-

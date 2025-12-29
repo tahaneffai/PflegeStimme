@@ -1,109 +1,164 @@
-# API Voices Route Fixes - Summary
+# End-to-End Project Fixes - Summary
 
-## ✅ All Issues Fixed
+## ✅ Completed Changes
 
-### 1. **GET /api/voices - Never Returns 500**
-- Always returns `200 OK` with structured JSON
-- Returns `{ ok: true/false, degraded: true/false, items: [], ... }`
-- Handles all Prisma errors gracefully
-- Returns empty list with `degraded: true` if database fails
-- Safe query param parsing with validation (page ≥ 1, size capped at 50)
+### 1. Database Schema (Prisma)
+**File: `prisma/schema.prisma`**
+- ✅ Removed `User` model completely
+- ✅ Added `CommentStatus` enum (PENDING, APPROVED, REJECTED)
+- ✅ Updated `Comment` model:
+  - Removed `userId` and `user` relation
+  - Removed `approved` boolean
+  - Added `status` field (CommentStatus enum, default PENDING)
+  - Added `updatedAt` field
+  - Added indexes on `status` and `createdAt`
 
-### 2. **POST /api/voices - Never Returns 500**
-- Always returns `200 OK` (or `400` for validation errors)
-- Returns `{ ok: true/false, degraded: true, message: "..." }` if DB fails
-- Never returns 500 for database issues
-- Only returns 400 for client validation errors
+### 2. API Routes
 
-### 3. **Enhanced safeDbQuery Utility**
-- Retry logic for SQLite locked errors (2 retries with exponential backoff)
-- Structured return: `{ ok: boolean, data: T, errorCode?, errorMessage?, degraded? }`
-- Handles all Prisma error codes:
-  - `P1001` / `P1008`: Connection/timeout errors
-  - `SQLITE_BUSY`: Locked database (with retry)
-  - `P1000`: Prisma not initialized
-- Dev logging for debugging
+#### Public API: `app/api/comments/route.ts`
+- ✅ `GET /api/comments?status=approved` - Returns only APPROVED comments
+- ✅ `POST /api/comments` - Creates comment with status PENDING
+  - Validates: content 5-500 characters
+  - Accepts both `content` and `message` field names
+  - Returns `message` field in response (frontend compatibility)
 
-### 4. **Prisma Client Singleton**
-- Proper singleton pattern using `globalThis`
-- Prevents multiple instances in Fast Refresh
-- Initialization verification
+#### Admin API: `app/api/admin/comments/route.ts`
+- ✅ `GET /api/admin/comments` - Lists all comments (admin only)
+  - Supports filters: `status`, `search`, `page`, `size`
+  - Returns `comments` array with `message` field
 
-### 5. **Client-Side Error Handling**
-- Updated `VoicesList.tsx` to handle new API format (`items` instead of `voices`)
-- Shows degraded warning when `degraded: true`
-- Graceful fallback to empty state
-- Backward compatible with legacy `voices` format
+#### Admin API: `app/api/admin/comments/[id]/route.ts`
+- ✅ `PATCH /api/admin/comments/:id` - Update comment status/content
+  - Supports `action: "approve" | "reject"`
+  - Supports direct `status: "PENDING" | "APPROVED" | "REJECTED"`
+  - Supports `content` update
+- ✅ `DELETE /api/admin/comments/:id` - Delete comment (admin only)
 
-### 6. **Data Safety**
-- Enhanced input sanitization (XSS prevention)
-- Message length validation (20-2000 chars)
-- Tag limit (max 5 tags)
-- SQL injection prevention (Prisma parameterized queries)
+#### Admin Auth API: `app/api/admin/login/route.ts`
+- ✅ `POST /api/admin/login` - Login with password only
+  - Body: `{ password: string }`
+  - Checks against `ADMIN_PASSWORD` env var
+  - Sets signed session cookie
 
-## API Response Format
+#### Admin Auth API: `app/api/admin/logout/route.ts`
+- ✅ `POST /api/admin/logout` - Clears session cookie
 
-### GET /api/voices
-```json
-{
-  "ok": true,
-  "degraded": false,
-  "items": [...],
-  "page": 1,
-  "size": 12,
-  "total": 0,
-  "totalPages": 0,
-  "hasMore": false
-}
+### 3. Admin Authentication (`lib/admin-auth.ts`)
+- ✅ Removed User model dependency
+- ✅ Removed bcrypt password hashing
+- ✅ Simple password check against `ADMIN_PASSWORD` env var
+- ✅ Session cookie signed with `ADMIN_SESSION_SECRET`
+- ✅ `verifySession()` returns boolean (not user object)
+
+### 4. Middleware (`middleware.ts`)
+- ✅ Protects `/admin/*` pages (except `/admin/login`)
+- ✅ Protects `/api/admin/*` routes
+- ✅ Redirects to `/admin/login` for pages
+- ✅ Returns 401 JSON for API routes
+
+### 5. Pages
+
+#### `app/voices/page.tsx`
+- ✅ Fetches approved comments from database
+- ✅ Passes data to `VoicesPageClient` component
+- ✅ Shows only APPROVED comments
+
+#### `app/admin/page.tsx`
+- ✅ Protected route (checks for admin session cookie)
+- ✅ Redirects to `/admin/login` if not authenticated
+- ✅ Renders `AdminDashboardClient`
+
+#### `app/admin/login/page.tsx`
+- ✅ Password-only login (no username)
+- ✅ Calls `/api/admin/login` with password
+- ✅ Redirects to `/admin` on success
+
+### 6. Components
+
+#### `components/admin/AdminDashboardClient.tsx`
+- ✅ Updated to use `data.data?.comments` (not `voices`)
+- ✅ Removed `AdminPasswordCard` reference (no user management)
+- ✅ Handles status updates correctly
+- ✅ Filters by status: all, PENDING, APPROVED, REJECTED
+
+#### `components/VoiceForm.tsx`
+- ✅ Already uses `/api/comments` endpoint
+- ✅ Sends `message` field (compatible with API)
+
+#### `components/VoicesList.tsx`
+- ✅ Already uses `/api/comments` endpoint
+- ✅ Handles `message` field in response
+
+### 7. Removed Files
+- ✅ `scripts/seed-admin.js` - No longer needed (no User model)
+- ✅ `components/admin/AdminPasswordCard.tsx` - Referenced but not needed
+
+### 8. Database Migration
+- ✅ Created migration: `20251229103000_remove_user_add_status`
+- ✅ Drops `User` table
+- ✅ Removes `userId` from `Comment`
+- ✅ Adds `status` enum and field
+- ✅ Adds `updatedAt` field
+- ✅ Creates indexes
+
+## 📋 Environment Variables Required
+
+### Local (`.env.local`):
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/dbname"
+ADMIN_SESSION_SECRET="a-long-random-secret-string"
+ADMIN_PASSWORD="12345678"
 ```
 
-### POST /api/voices
-**Success:**
-```json
-{
-  "ok": true,
-  "pending": true,
-  "message": "Thanks. Your message was received..."
-}
-```
+### Vercel:
+- `DATABASE_URL`
+- `ADMIN_SESSION_SECRET`
+- `ADMIN_PASSWORD`
 
-**Database Unavailable:**
-```json
-{
-  "ok": false,
-  "degraded": true,
-  "message": "Temporary unavailable. Please try again later."
-}
-```
+## 🚀 Setup Instructions
 
-## Error Codes Handled
+1. **Set environment variables** in `.env.local`
+2. **Run migration** (already applied):
+   ```bash
+   npx prisma migrate deploy
+   ```
+3. **Generate Prisma Client**:
+   ```bash
+   npx prisma generate
+   ```
+4. **Start dev server**:
+   ```bash
+   npm run dev
+   ```
 
-- `P1001`: Database connection error
-- `P1008`: Database timeout
-- `P1000`: Prisma not initialized
-- `SQLITE_BUSY`: Database locked (with retry)
-- `P2002`: Duplicate entry
-- `P2025`: Record not found
+## ✅ Features Working
 
-## Testing
+- ✅ Public users can submit anonymous comments
+- ✅ Comments saved with status PENDING
+- ✅ Admin can login with password only
+- ✅ Admin can view all comments (filtered by status)
+- ✅ Admin can approve/reject comments
+- ✅ Only APPROVED comments appear on `/voices` page
+- ✅ No User model, no roles, no database auth for admin
+- ✅ Simple password-based admin authentication
 
-1. **Normal Operation:**
-   - GET returns 200 with `ok: true` and items
-   - POST returns 200 with `ok: true` and pending message
+## 🔧 API Endpoints Summary
 
-2. **Database Unavailable:**
-   - GET returns 200 with `ok: false, degraded: true, items: []`
-   - POST returns 200 with `ok: false, degraded: true, message: "..."`
+### Public:
+- `GET /api/comments?status=approved&page=1&size=20` - Get approved comments
+- `POST /api/comments` - Submit new comment
 
-3. **Validation Errors:**
-   - POST returns 400 with validation error message
+### Admin (requires authentication):
+- `POST /api/admin/login` - Login with password
+- `POST /api/admin/logout` - Logout
+- `GET /api/admin/comments?status=PENDING&page=1&size=20` - List comments
+- `PATCH /api/admin/comments/:id` - Update comment (approve/reject/edit)
+- `DELETE /api/admin/comments/:id` - Delete comment
 
-## Next Steps
+## 📝 Notes
 
-If you still see 500 errors:
-1. Check terminal logs for exact Prisma error
-2. Ensure database file is not locked (close DB viewers)
-3. Restart dev server: `npm run dev`
-4. Run `npx prisma generate` if Prisma client is outdated
-
-
+- All API responses use format: `{ ok: boolean, data: {...}, error?: {...} }`
+- Frontend expects `message` field in comment objects (API provides both `message` and `content`)
+- Admin authentication is stateless (no database lookup)
+- Session cookies are HTTP-only and signed
+- No user accounts needed - completely anonymous for public users

@@ -36,7 +36,7 @@ export default function VoiceForm({ onSuccess }: VoiceFormProps) {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/voices', {
+      const response = await fetch('/api/comments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

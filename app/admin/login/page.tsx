@@ -31,22 +31,26 @@ export default function AdminLoginPage() {
       try {
         data = await response.json();
       } catch (jsonError) {
+        console.error('[Login] JSON parse error:', jsonError);
         throw new Error('Invalid response from server');
       }
 
-      if (!response.ok) {
-        const errorMsg = data.error || data.message || 'Invalid password';
-        console.error('[Login] Login failed:', errorMsg, 'Status:', response.status);
+      console.log('[Login] Response status:', response.status);
+      console.log('[Login] Response data:', data);
+
+      if (!response.ok || !data.ok) {
+        const errorMsg = data.error?.message || data.error || 'Invalid credentials';
+        console.error('[Login] Login failed:', errorMsg);
         throw new Error(errorMsg);
       }
 
-      if (data.success) {
-        console.log('[Login] Login successful, redirecting...');
-        router.push('/admin');
-        router.refresh();
-      } else {
-        throw new Error(data.error || 'Login failed');
-      }
+      console.log('[Login] Login successful, redirecting...');
+      
+      // Small delay to ensure cookie is set, then redirect
+      setTimeout(() => {
+        console.log('[Login] Executing redirect to /admin');
+        window.location.href = '/admin';
+      }, 100);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -90,7 +94,7 @@ export default function AdminLoginPage() {
                     }}
                     required
                     className="w-full bg-dark-green-3/50 border border-dark-green-mid rounded-lg pl-11 pr-4 py-3 text-off-white focus:outline-none focus:border-gold transition-colors"
-                    placeholder="Enter admin password"
+                    placeholder="Enter password"
                   />
                 </div>
               </div>
